@@ -1,77 +1,115 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>   // for PRIu64
+#include <time.h>
 
-// convert string to __int128
-__int128 str_to_int128(const char *s) {
-    __int128 val = 0;
-    int i = 0, neg = 0;
-    if (s[0] == '-') { neg = 1; i++; }
-    for (; s[i] >= '0' && s[i] <= '9'; i++) {
+// convert string to unsigned __int128
+unsigned __int128 str_to_uint128(const char *s) {
+    unsigned __int128 val = 0;
+    for (int i = 0; s[i] >= '0' && s[i] <= '9'; i++) {
         val = val * 10 + (s[i] - '0');
     }
-    return neg ? -val : val;
+    return val;
 }
 
-// helper to print __int128
-void print_int128(__int128 value) {
+// helper to print unsigned __int128
+void print_uint128(unsigned __int128 value) {
     if (value == 0) {
         printf("0");
         return;
     }
     char buf[64];
     int i = 0;
-    int neg = value < 0;
-    if (neg) value = -value;
 
     while (value > 0) {
         buf[i++] = (value % 10) + '0';
         value /= 10;
     }
-    if (neg) putchar('-');
+
     while (i > 0) putchar(buf[--i]);
 }
 
-// You have a main WORKLOAD, where you have to calculate the sum of variables from 0 up to N (not inclusive).
+// helper: difference in seconds (as double)
+double time_diff(struct timespec start, struct timespec end) {
+    return (end.tv_sec - start.tv_sec) +
+           (end.tv_nsec - start.tv_nsec) / 1e9;
+}
+
+// main WORKLOAD driver
 int main() {
-    int N = 1000;
+    uint64_t N_OPTIONS[] = {100000000ULL, 1000000000ULL, 10000000000ULL};
+    size_t N_OPTIONS_LEN = sizeof(N_OPTIONS) / sizeof(N_OPTIONS[0]);
+
     int NUM_TASKS[] = {2, 4, 8};
-    size_t TASKS_ARRAY_LEN = sizeof(NUM_TASKS)/sizeof(NUM_TASKS[0]);
-    __int128 total = 0;
+    size_t TASKS_ARRAY_LEN = sizeof(NUM_TASKS) / sizeof(NUM_TASKS[0]);
+
+    unsigned __int128 total = 0;
     
-    for (int i = 0; i < TASKS_ARRAY_LEN; i++) {
-        printf("Running with %d tasks:\n", NUM_TASKS[i]);
+    for (size_t i = 0; i < N_OPTIONS_LEN; i++) {
+        uint64_t N = N_OPTIONS[i];
+        printf("N = %" PRIu64 ":\n", N);
+        
+        for (int j = 0; j < TASKS_ARRAY_LEN; j++) {
+            struct timespec start, end;
 
-        // Start all processes
-        FILE *fps[NUM_TASKS[i]];
-        for (int j = 0; j < NUM_TASKS[i]; j++) {
-            long long part = 0;
-            long long chunk_size = N / NUM_TASKS[i];
-            long long lower = j * chunk_size;
-            long long upper = (j + 1) * chunk_size;
+            // start timer
+            clock_gettime(CLOCK_MONOTONIC, &start);
 
-            printf("lower=%lld upper=%lld\n", lower, upper);
+            // Start all processes
+            FILE *fps[NUM_TASKS[j]];
+            for (int k = 0; k < NUM_TASKS[j]; k++) {
+                uint64_t chunk_size = N / NUM_TASKS[j];
+                uint64_t lower = k * chunk_size;
+                uint64_t upper = (k + 1) * chunk_size;
 
-            char command[128];
-            sprintf(command, "./sum %lld %lld", lower, upper);
-            fps[j] = popen(command, "r");
-        }
+                char command[128];
+                sprintf(command, "./sum %" PRIu64 " %" PRIu64, lower, upper);
 
-        // Collect results
-        for (int j = 0; j < NUM_TASKS[i]; j++) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), fps[j]) != NULL) {
-                __int128 part = str_to_int128(buffer);
-                total += part;
+                fps[k] = popen(command, "r");
+                if (!fps[k]) {
+                    perror("popen failed");
+                    exit(1);
+                }
             }
-            
-            pclose(fps[j]);
+
+            // Collect results with fscanf
+            for (int k = 0; k < NUM_TASKS[j]; k++) {
+                char buffer[128];
+                if (fscanf(fps[k], "%127s", buffer) == 1) {
+                    unsigned __int128 part = str_to_uint128(buffer);
+                    total += part;
+                }
+                pclose(fps[k]);
+            }
+
+            // stop timer
+            clock_gettime(CLOCK_MONOTONIC, &end);
+            double elapsed = time_diff(start, end);
+
+            // Closed-form reference using 128-bit
+            unsigned __int128 expected = (unsigned __int128)N * (N - 1) / 2;
+
+            printf("Total sum after %d tasks: ", NUM_TASKS[j]);
+            print_uint128(total);
+            printf("\n");
+
+            printf("Closed-form result: ");
+            print_uint128(expected);
+            printf("\n");
+
+            if (total == expected) {
+                printf("Check: OK\n");
+            } else {
+                printf("Check: MISMATCH!\n");
+            }
+
+            // printf("Total sum after %d tasks: ", NUM_TASKS[j]);
+            // print_uint128(total);
+            // printf("\n");
+            printf("Elapsed time: %.6f seconds\n\n", elapsed);
+
+            total = 0;
         }
-
-        printf("Total sum after %d tasks: ", NUM_TASKS[i]);
-        print_int128(total);
-        printf("\n\n");
-        total = 0;
     }
-
     return 0;
 }
