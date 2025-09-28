@@ -103,9 +103,6 @@ int main() {
                 printf("Check: MISMATCH!\n");
             }
 
-            // printf("Total sum after %d tasks: ", NUM_TASKS[j]);
-            // print_uint128(total);
-            // printf("\n");
             printf("Elapsed time: %.6f seconds\n\n", elapsed);
 
             total = 0;
