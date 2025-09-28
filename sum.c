@@ -25,7 +25,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // CHANGED: keep everything unsigned
     uint64_t lower = strtoull(argv[1], NULL, 10); 
     uint64_t upper = strtoull(argv[2], NULL, 10); 
     unsigned __int128 sum = 0;
